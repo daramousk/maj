@@ -1,232 +1,265 @@
 package tv.amwa.maj.record.impl;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.Dictionary;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
 
 import org.junit.Test;
 
+import tv.amwa.maj.constant.ContainerConstant;
+import tv.amwa.maj.constant.RP224;
 import tv.amwa.maj.constant.TransferCharacteristicType;
-import tv.amwa.maj.constant.UsageType;
+import tv.amwa.maj.enumeration.ChannelStatusModeType;
 import tv.amwa.maj.enumeration.LayoutType;
+import tv.amwa.maj.enumeration.ProductReleaseType;
 import tv.amwa.maj.exception.AdjacentTransitionException;
+import tv.amwa.maj.exception.BadLengthException;
 import tv.amwa.maj.exception.BadPropertyException;
 import tv.amwa.maj.exception.EventSemanticsException;
 import tv.amwa.maj.exception.InsufficientTransitionMaterialException;
+import tv.amwa.maj.exception.InvalidDataDefinitionException;
 import tv.amwa.maj.exception.LeadingTransitionException;
 import tv.amwa.maj.exception.TrackExistsException;
 import tv.amwa.maj.extensions.avid.AvidFactory;
 import tv.amwa.maj.extensions.avid.CDCIDescriptor;
 import tv.amwa.maj.industry.Forge;
+import tv.amwa.maj.industry.MediaEngine;
+import tv.amwa.maj.industry.PropertyValue;
+import tv.amwa.maj.industry.TypeDefinitions;
 import tv.amwa.maj.industry.Warehouse;
-import tv.amwa.maj.io.aaf.AAFConstants;
 import tv.amwa.maj.io.aaf.AAFFactory;
-import tv.amwa.maj.io.mxf.KLVObject;
-import tv.amwa.maj.model.AAFFileDescriptor;
-import tv.amwa.maj.model.CompositionPackage;
+import tv.amwa.maj.model.AES3PCMDescriptor;
+import tv.amwa.maj.model.ContainerDefinition;
 import tv.amwa.maj.model.ContentStorage;
-import tv.amwa.maj.model.DataDefinition;
-import tv.amwa.maj.model.KLVData;
+import tv.amwa.maj.model.Identification;
 import tv.amwa.maj.model.Locator;
-import tv.amwa.maj.model.MaterialPackage;
-import tv.amwa.maj.model.MultipleDescriptor;
 import tv.amwa.maj.model.NetworkLocator;
 import tv.amwa.maj.model.Preface;
+import tv.amwa.maj.model.Segment;
 import tv.amwa.maj.model.Sequence;
 import tv.amwa.maj.model.SourceClip;
 import tv.amwa.maj.model.SourcePackage;
-import tv.amwa.maj.model.TapeDescriptor;
 import tv.amwa.maj.model.TimelineTrack;
-import tv.amwa.maj.model.Track;
-import tv.amwa.maj.model.WAVEPCMDescriptor;
-import tv.amwa.maj.model.impl.DictionaryImpl;
-import tv.amwa.maj.model.impl.KLVDataImpl;
-import tv.amwa.maj.record.AUID;
+import tv.amwa.maj.model.impl.AES3PCMDescriptorImpl;
+import tv.amwa.maj.model.impl.CDCIDescriptorImpl;
+import tv.amwa.maj.model.impl.ContainerDefinitionImpl;
+import tv.amwa.maj.model.impl.DataDefinitionImpl;
+import tv.amwa.maj.model.impl.LocatorImpl;
+import tv.amwa.maj.model.impl.MaterialPackageImpl;
+import tv.amwa.maj.model.impl.NetworkLocatorImpl;
+import tv.amwa.maj.model.impl.SegmentImpl;
+import tv.amwa.maj.model.impl.SourceClipImpl;
+import tv.amwa.maj.model.impl.SourcePackageImpl;
+import tv.amwa.maj.model.impl.TaggedValueImpl;
+import tv.amwa.maj.model.impl.TapeDescriptorImpl;
+import tv.amwa.maj.model.impl.TimecodeSegmentImpl;
+import tv.amwa.maj.model.impl.TimelineTrackImpl;
+import tv.amwa.maj.record.PackageID;
+import tv.amwa.maj.union.impl.SourceReferenceValueImpl;
 
 public class Avid {
 
     @Test
     public void test() throws IOException, TrackExistsException, NullPointerException, IllegalArgumentException, EventSemanticsException, BadPropertyException, LeadingTransitionException, AdjacentTransitionException, InsufficientTransitionMaterialException {
+        MediaEngine.initializeAAF();
         AvidFactory.registerAvidExtensions();
-        Preface preface = makePreface();
+        Preface preface = createAAF();
         AAFFactory.writePreface(preface, "./chronicle-sequence.aaf");
+        Path path = Paths.get("./chronicle-sequence.txt");
+        Files.write(path, preface.toString().getBytes());
     }
 
-    public static final Preface makePreface() throws NullPointerException, IllegalArgumentException, TrackExistsException, EventSemanticsException, BadPropertyException, LeadingTransitionException, AdjacentTransitionException, InsufficientTransitionMaterialException {
-        int sourceVideoTrackID = 2;
-		int sourceAudioTrackID = 3;
-        int sourceEssenceLength = 7738;
-
-        TapeDescriptor tapeDescription = Forge.make(TapeDescriptor.class);
-        
-		SourcePackage sourceTape = Forge.make(SourcePackage.class,
-				"PackageID", Forge.randomUMID(), "Name", "A-Stream_10_00_00_20251023",
-				"PackageTracks", new Track[] {
-                        // TODO the duration is in frames and 30 minutes
-						makeTimelineTrack("Picture", null, 0, 0l, 1, sourceEssenceLength), // TODO
-						makeTimelineTrack("Sound", null, 0, 0l, 2, sourceEssenceLength) }, // TODO
-                "EssenceDescription", tapeDescription);
-
-        SourcePackage sourceFile = Forge.makeAAF("SourceMob", "Name", "A-Stream_10_00_00_20251023",
-            "PackageID", Forge.randomUMID(), "PackageTracks", new Track[] {
-                makeTimelineTrack("Picture", sourceTape, 1, 0, sourceVideoTrackID, sourceEssenceLength),
-                makeTimelineTrack("Sound", sourceTape, 2, 0, sourceAudioTrackID, sourceEssenceLength)
-            },
-            "EssenceDescription", Forge.make(MultipleDescriptor.class,
-            "FileDescriptors", new AAFFileDescriptor[] {
-                    makeIMX50VideoDescriptor(sourceEssenceLength, sourceVideoTrackID),
-                    makeWAVEPCMDescriptor(sourceEssenceLength, sourceAudioTrackID) },
-            "Locators", new Locator[] {
-                    Forge.make(NetworkLocator.class, "URL", "file://10.21.6.211/qnap-1/Avid%20MediaFiles/MXF/syd-dailies01.20251023/A_Stream_V012BEE7550.mxf"),
-                    Forge.make(NetworkLocator.class, "URL", "file://10.21.6.211/qnap-1/Avid%20MediaFiles/MXF/syd-dailies01.20251023/A_Stream_A012BEE3961.mxf"),
-                    // Forge.make(NetworkLocator.class, "URL", ""),
-                    // Forge.make(NetworkLocator.class, "URL", ""),
-                    // Forge.make(NetworkLocator.class, "URL", ""),
-                    // Forge.make(NetworkLocator.class, "URL", ""),
-                    // Forge.make(NetworkLocator.class, "URL", ""),
-                    // Forge.make(NetworkLocator.class, "URL", ""),
-                    // Forge.make(NetworkLocator.class, "URL", "")
-                }//,
-            )
+    private static final Preface createAAF() throws InvalidDataDefinitionException, BadLengthException, NullPointerException, EventSemanticsException, BadPropertyException, LeadingTransitionException, AdjacentTransitionException, InsufficientTransitionMaterialException, TrackExistsException {
+        String[] types = new String[]{"video", "audio", "audio", "audio", "audio", "audio", "audio", "audio", "audio", "timecode"};
+        Identification indentification = Forge.make(
+            Identification.class,
+            "CompanyName", "Cutting Edge Technical Services",
+            "ProductName", "Chronicle", "ProductVersion", new ProductVersionImpl((short)1, (short)0, (short)0, (short)0, ProductReleaseType.Debug)
         );
+        // top source mob
+        TapeDescriptorImpl topSourceMobEssenceDescriptor = new TapeDescriptorImpl();
+        PackageID topSourceMobID = Forge.randomUMID();
+        SourcePackageImpl topSourceMob = new SourcePackageImpl(topSourceMobID, "A-Stream_10_00_00_20251023", topSourceMobEssenceDescriptor);
         
-        MaterialPackage masterPackage = Forge.make(
-            MaterialPackage.class, "PackageName", "A-Stream_10_00_00_20251023",
-            "PackageID", Forge.randomUMID(), "PackageTracks", new Track[]{
-                makeTimelineTrack("Picture",
-                    sourceFile, sourceVideoTrackID, 0l, sourceVideoTrackID, 125l),
-                makeTimelineTrack("Sound", 
-                    sourceFile, sourceAudioTrackID, 0l, sourceAudioTrackID, 125) });
-        masterPackage.appendPackageUserComment("TapeID", "A-Stream20251023");
-        masterPackage.appendPackageUserComment("TapeNameLegacy", "A-Stream20251023");
+        // top master mob
+        MaterialPackageImpl masterMob = new MaterialPackageImpl(Forge.randomUMID(), "A-Stream_10_00_00_20251023");
+        masterMob.appendPackageUserComment("TapeID", "A-Stream20251023");
+        masterMob.appendPackageUserComment("TapeNameLegacy", "A-Stream20251023");
+        PropertyValue attrList = TypeDefinitions.TaggedValueStrongReferenceVector.createValue("__AttributeList");
+        TaggedValueImpl export = new TaggedValueImpl("_EXPORT", attrList);
+        TaggedValueImpl duration = new TaggedValueImpl(
+            "Duration", TypeDefinitions.TaggedValueStrongReferenceVector.createValue("00:05:09:13"));
+        export.insertTaggedValueAttributeItem(0, duration);
+        masterMob.appendMobAttributeItem(export); // TODO add the other ones as well perhaps?     fix locators dynamic    
+        ArrayList<tv.amwa.maj.model.Package> packages = new ArrayList<>();
+        packages.add(topSourceMob);
+        packages.add(masterMob);
 
-        // TODO we need duration and start
-        //masterPackage.appendPackageUserComment("Start", "10:00:00:00");
-        
-        CompositionPackage rootComposition = Forge.make(CompositionPackage.class,
-                "PackageName", "A-Stream_10_00_00_20251023",
-                "PackageID", Forge.randomUMID(),
-                "PackageUsage", UsageType.TopLevel);
-        Sequence videoSequence = Forge.make(Sequence.class, "ComponentDataDefinition", "Picture");
-        Sequence audioSequence = Forge.make(Sequence.class, "ComponentDataDefinition", "Sound");
-        videoSequence.appendComponentObject(makeSourceClip("Picture", masterPackage, sourceVideoTrackID, 0, 50));
-        audioSequence.appendComponentObject(makeSourceClip("Sound", masterPackage, sourceAudioTrackID, 0, 50));
-        rootComposition.appendNewTimelineTrack(
-                Forge.makeRational(25, 1), videoSequence, sourceVideoTrackID, "VideoTrack", 0);
-        rootComposition.appendNewTimelineTrack(
-                Forge.makeRational(25, 1), audioSequence, sourceAudioTrackID, "AudioTrack", 0);
-        return Forge.make(Preface.class, "ContentStorageObject", Forge.make(
-            ContentStorage.class, "Packages", new tv.amwa.maj.model.Package[]{
-                sourceTape, sourceFile, masterPackage
-            }));
-    }
+        for (int index = 1; index <= types.length; index++) {
+            if (types[index].equals("video")) {
+                // top source mob (contains all the mobs)
+                Segment segment = new SegmentImpl();
+                segment.setComponentDataDefinition(DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture));
+                segment.setComponentLength(10800000);
+                Sequence sequence = segment.generateSequence();
+                SourceClip sourceClip = new SourceClipImpl(
+                    DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture),
+                    10800000, new SourceReferenceValueImpl(Forge.zeroPackageID(), 0, 0l));
+                sequence.appendComponentObject(sourceClip);
+                
+                TimelineTrack track = new TimelineTrackImpl(
+                    index + 1, sequence, Forge.makeRational(25, 1), 0);
+                    track.setTrackName("");
+                track.setEssenceTrackNumber(index);
+                topSourceMob.appendPackageTrack(track);
 
-    public final static CDCIDescriptor makeIMX50VideoDescriptor(
-			long essenceLength,
-			int linkedTrackID) {
+                // master mob
+                Segment masterSegment = new SegmentImpl();
+                masterSegment.setComponentDataDefinition(DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture));
+                masterSegment.setComponentLength(10800000);
+                Sequence masterSequence = masterSegment.generateSequence();
+                PackageID videoSourceClipPackageID = topSourceMobID;
+                SourceClip masterSourceClip = new SourceClipImpl(
+                    DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture),
+                    7738, new SourceReferenceValueImpl(videoSourceClipPackageID, index, 0l));
+                masterSequence.appendComponentObject(masterSourceClip);
+                
+                TimelineTrack masterTrack = new TimelineTrackImpl(
+                    index, masterSequence, Forge.makeRational(25, 1), 0);
+                masterTrack.setTrackName("");
+                masterTrack.setEssenceTrackNumber(index);
+                masterMob.appendPackageTrack(masterTrack);
 
-		return Forge.make(CDCIDescriptor.class,
-            "SampleRate", "25/1",
-            "ContainerFormat", "ContainerDef_MXFGC_Clipwrapped_VC3",
-            "EssenceLength", essenceLength,
-            "Length", essenceLength,
-            "PictureCompression", "urn:smpte:ul:060e2b34.0401010d.04010202.03070100",
-            "FrameLayout", LayoutType.FullFrame,
-            "VideoLineMap", new int[] { 42, 0 },
-            "ImageAspectRatio", Forge.makeRational(16, 9),
-            // "AlphaTransparency", AlphaTransparencyType.MinValueTransparent,
-            // "ImageAlignmentFactor", 0,
-            "TransferCharacteristic", TransferCharacteristicType.ITU709,
-            // "ImageStartOffset", 0,
-            // "ImageEndOffset", 0,
-            // "FieldDominance", FieldNumber.One,
-            // "DisplayF2Offset", 0,
-            // "StoredF2Offset", 0,
-            // "SignalStandard", SignalStandardType.ITU601,
-            "DisplayHeight", 1080,
-            "DisplayWidth", 1920,
-            "DisplayXOffset", 0,
-            "DisplayYOffset", 0,
-            // "DataOffset", 393216,
-            "SampledHeight", 1080,
-            "SampledWidth", 1920,
-            // "SampledXOffset", 0,
-            // "SampledYOffset", 0,
-            "StoredHeight", 1080,
-            "StoredWidth", 1920,
-            // "AlphaSampleDepth", 0,
-            // "BlackRefLevel", 16,
-            // "ColorRange", 225,
-            // "ColorSiting", ColorSitingType.Rec601,
-            // "ComponentDepth", 8,
-            "HorizontalSubsampling", 2,
-            // "PaddingBits", 0,
-            // "ReversedByteOrder", false,
-            "VerticalSubsampling", 1,
-            // "WhiteRefLevel", 235,
-            "OffsetToFrameIndexes64", 4691066855L,
-            "DataOffset", 393216,
-            "ResolutionID", 1237,
-            "ComponentWidth", 8,
-            // "SourceBox", new Rational[]{Forge.makeRational(-800, 1), Forge.makeRational(-450, 1), Forge.makeRational(1600, 1), Forge.makeRational(900, 1)},
-            // "EssenceBox", new Rational[]{Forge.makeRational(-800, 1), Forge.makeRational(-450, 1), Forge.makeRational(1600, 1), Forge.makeRational(900, 1)},
-            // "ValidBox", new Rational[]{Forge.makeRational(-800, 1), Forge.makeRational(-450, 1), Forge.makeRational(1600, 1), Forge.makeRational(900, 1)},
-            "LinkedTrackID", linkedTrackID
-        );
-	}
+                // top picture mob
+                Segment topPictureMobSegment = new SegmentImpl();
+                topPictureMobSegment.setComponentDataDefinition(DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture));
+                topPictureMobSegment.setComponentLength(7738);
+                Sequence topPictureMobSequence = segment.generateSequence();
+                SourceClip topPictureMobSourceClip = new SourceClipImpl(
+                    DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture),
+                    7738, new SourceReferenceValueImpl(topSourceMobID, index + 2, 0l));
+                topPictureMobSequence.appendComponentObject(topPictureMobSourceClip);
+                TimelineTrack topPictureMobtrack = new TimelineTrackImpl(
+                    index + 1, topPictureMobSequence, Forge.makeRational(25, 1), 0);
+                    topPictureMobtrack.setTrackName("");
+                topPictureMobtrack.setEssenceTrackNumber(index);
+                CDCIDescriptorImpl topPictureMobDescriptor = new CDCIDescriptorImpl();
+                NetworkLocatorImpl locator = new NetworkLocatorImpl();
+                locator.setURL("file://10.21.6.211/qnap-1/Avid%20MediaFiles/MXF/syd-dailies01.20251023/A_Stream_V012BEE7550.mxf");
+                topPictureMobDescriptor.appendLocator(locator);
+                topPictureMobDescriptor.setSampleRate(Forge.makeRational(25, 1));
+                topPictureMobDescriptor.setEssenceLength(7738l);
+                topPictureMobDescriptor.setContainerFormat(Warehouse.lookup(ContainerDefinition.class, ContainerConstant.MXFGC_Clipwrapped_VC3));
+                topPictureMobDescriptor.setPictureCompression(RP224.H264_MPEG4_AVC_High_10_Intra_Unconstrained_Coding);
+                topPictureMobDescriptor.setStoredHeight(1080);
+                topPictureMobDescriptor.setStoredWidth(1920);
+                topPictureMobDescriptor.setSampledHeight(1080);
+                topPictureMobDescriptor.setSampledWidth(1920);
+                topPictureMobDescriptor.setDisplayHeight(1080);
+                topPictureMobDescriptor.setDisplayWidth(1920);
+                topPictureMobDescriptor.setDisplayXOffset(0);
+                topPictureMobDescriptor.setDisplayYOffset(0);
+                topPictureMobDescriptor.setFrameLayout(LayoutType.FullFrame);
+                topPictureMobDescriptor.setVideoLineMap(new int[]{42, 0});
+                topPictureMobDescriptor.setImageAspectRatio(Forge.makeRational(16,9));
+                topPictureMobDescriptor.setTransferCharacteristic(TransferCharacteristicType.ITU709);
+                topPictureMobDescriptor.setHorizontalSubsampling(2);
+                topPictureMobDescriptor.setVerticalSubsampling(1);
+                topPictureMobDescriptor.setOffsetToFrameIndexes64(4691066855l);
+                topPictureMobDescriptor.setDataOffset(393216);
+                topPictureMobDescriptor.setResolutionID(1237);
+                // componentwidth and *.box stuff missing?
+                SourcePackageImpl topPictureMob = new SourcePackageImpl(videoSourceClipPackageID, null, topPictureMobDescriptor);
+                topPictureMob.appendPackageTrack(topPictureMobtrack);
+                packages.add(topPictureMob);
 
-    public final static WAVEPCMDescriptor makeWAVEPCMDescriptor(
-        long essenceLength,
-        int linledTrackID) {
-        return Forge.make(WAVEPCMDescriptor.class,
-            "SampleRate", "25/1",
-            "ContainerFormat", "ContainerDef_MXFGC_Clipwrapped_AES3_audio_data",
-            "EssenceLength", essenceLength,
-            "Length", essenceLength,
-            "AudioSampleRate", Forge.makeRational(48000, 1),
-            "QuantizationBits", 16,
-            "ChannelCount", 1,
-            "Locked", true,
-            "AverageBytesPerSecond", 96000,
-            "BlockAlign", 2,
-            "ChannelAssignment", "urn:uuid:4b7093c0-c8d2-4f9a-aadc-c1a8d556d3e3",
-            "LinkedTrackID", 3);
+            } else if (types[index].equals("audio")) {
+                Segment segment = new SegmentImpl();
+                segment.setComponentDataDefinition(DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacySound));
+                segment.setComponentLength(10800000);
+                Sequence sequence = segment.generateSequence();
+                SourceClip sourceClip = new SourceClipImpl(
+                    DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture),
+                    10800000, new SourceReferenceValueImpl(Forge.zeroPackageID(), 0, 0l));
+                sequence.appendComponentObject(sourceClip);
+                
+                TimelineTrack track = new TimelineTrackImpl(
+                    index + 1, sequence, Forge.makeRational(25, 1), 0);
+                    track.setTrackName("");
+                track.setEssenceTrackNumber(index);
+                topSourceMob.appendPackageTrack(track);
+
+                // master mob
+                Segment masterSegment = new SegmentImpl();
+                masterSegment.setComponentDataDefinition(DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacySound));
+                masterSegment.setComponentLength(7738);
+                Sequence masterSequence = segment.generateSequence();
+                PackageID audioSourceClipPackageID = Forge.randomUMID(); // TODO needs to be same with top source mob
+                SourceClip masterSourceClip = new SourceClipImpl(
+                    DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture),
+                    10800000, new SourceReferenceValueImpl(audioSourceClipPackageID, 0, 0l));
+                masterSequence.appendComponentObject(masterSourceClip);
+                
+                TimelineTrack masterTrack = new TimelineTrackImpl(
+                    index, masterSequence, Forge.makeRational(25, 1), 0);
+                masterTrack.setTrackName("");
+                masterTrack.setEssenceTrackNumber(index);
+                masterMob.appendPackageTrack(masterTrack);
+
+                // top audio mob
+                Segment topAudioSegment = new SegmentImpl();
+                topAudioSegment.setComponentDataDefinition(DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacySound));
+                //topAudioSegment.setComponentLength(10800000);
+                Sequence topAudioSequence = topAudioSegment.generateSequence();
+                SourceClip topAudioSourceClip = new SourceClipImpl(
+                    DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture),
+                    10800000, new SourceReferenceValueImpl(topSourceMobID, 0, 0l));
+                topAudioSequence.appendComponentObject(topAudioSourceClip);
+                
+                TimelineTrack topAudioTrack = new TimelineTrackImpl(
+                    index + 1, topAudioSequence, Forge.makeRational(25, 1), 0);
+                topAudioTrack.setTrackName("");
+                topAudioTrack.setEssenceTrackNumber(index);
+                AES3PCMDescriptorImpl topAudioMobDescriptor = new AES3PCMDescriptorImpl();
+                NetworkLocatorImpl topAudioLocator = new NetworkLocatorImpl("file://10.21.6.211/qnap-1/Avid%20MediaFiles/MXF/syd-dailies01.20251023/A_Stream_A022BEE9F6F.mxf");
+                topAudioMobDescriptor.appendLocator(topAudioLocator);
+                topAudioMobDescriptor.setSampleRate(Forge.makeRational(48000, 1));
+                topAudioMobDescriptor.setEssenceLength(14856960l);
+                topAudioMobDescriptor.setContainerFormat(Warehouse.lookup(ContainerDefinition.class, ContainerConstant.MXFGC_Clipwrapped_AES3_audio_data));
+                topAudioMobDescriptor.setQuantizationBits(24);
+                topAudioMobDescriptor.setAudioSampleRate(Forge.makeRational(48000, 1));
+                topAudioMobDescriptor.setChannelCount(1);
+                topAudioMobDescriptor.setAverageBytesPerSecond(144000);
+                topAudioMobDescriptor.setBlockAlign((short)3);
+                topAudioMobDescriptor.setChannelStatusMode(new ChannelStatusModeType[]{ChannelStatusModeType.Minimum});
+                //topAudioMobDescriptor.setFixedChannelStatusData(new byte[]{});
+                topAudioMobDescriptor.setDataOffset(393216);
+                SourcePackageImpl topSoundMob = new SourcePackageImpl(audioSourceClipPackageID, "", topAudioMobDescriptor);
+                topSoundMob.appendPackageTrack(topAudioTrack);
+                packages.add(topSoundMob);
+            } else if (types[index].equals("timecode")) {
+                TimecodeSegmentImpl segment = new TimecodeSegmentImpl();
+                segment.setComponentDataDefinition(DataDefinitionImpl.forIdentification(DataDefinitionImpl.Timecode));
+                segment.setComponentLength(10800000);
+                segment.setStartTimecode(900000);
+                segment.setFPS((short)25);
+                segment.setDropFrame(false);
+                Sequence sequence = segment.generateSequence();
+                SourceClip sourceClip = new SourceClipImpl(
+                    DataDefinitionImpl.forIdentification(DataDefinitionImpl.LegacyPicture),
+                    10800000, new SourceReferenceValueImpl(Forge.zeroPackageID(), 0, 0l));
+                sequence.appendComponentObject(sourceClip);
+                
+                TimelineTrack track = new TimelineTrackImpl(
+                    1, sequence, Forge.makeRational(25, 1), 0);
+                    track.setTrackName("");
+                track.setEssenceTrackNumber(1);
+                topSourceMob.appendPackageTrack(track);
+            }
         }
-
-    public static final TimelineTrack makeTimelineTrack(
-        String trackType, tv.amwa.maj.model.Package sourceChainReference, int sourceTrackID, long startPosition,
-        int localTrackID, long componentLength) {
-            SourceClip clipReference = makeSourceClip(
-                trackType, sourceChainReference, sourceTrackID, startPosition, componentLength);
-        return Forge.makeAAF("TimelineMobSlot", "SlotID", localTrackID,
-            "SlotName", "", "TimelineMobSlotEditRate", "25/1",
-            "Origin", 0,
-            "MobSlotSegment", clipReference
-        );
-    }
-
-    public final static SourceClip makeSourceClip(
-			String trackType,
-			tv.amwa.maj.model.Package sourcePackage,
-			int sourceTrackID,
-			long startPosition,
-			long componentLength) {
-		if (sourcePackage != null) {
-			return Forge.make(SourceClip.class,
-                "ComponentDataDefinition", Warehouse.lookup(DataDefinition.class, trackType),
-                "ComponentLength", componentLength,
-                "Length", componentLength,
-                "SourceTrackID", sourceTrackID,
-                "SourcePackageID", sourcePackage.getPackageID(),
-                "StartPosition", 0l
-            );
-		}
-		else { // If no source package is provided, make an original source reference
-			SourceClip clipReference = Forge.make(SourceClip.class);
-			clipReference.setComponentDataDefinition(Warehouse.lookup(DataDefinition.class, trackType));
-			clipReference.setComponentLength(componentLength);
-			clipReference.setSourceReference(Forge.originalSource());
-			return clipReference;
-		}
+        return Forge.make(Preface.class, "ContentStorageObject", Forge.make(
+            ContentStorage.class, "Packages",packages.toArray()));
 	}
 }

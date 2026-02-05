@@ -105,6 +105,7 @@ public class CompositionExample {
 			if ((args[0].endsWith(".aaf")) || (args[0].endsWith(".isr"))) { // Structured storage file requested
 				AvidFactory.registerAvidExtensions(); // Line will be removed on final release of MAJ
 				AAFFactory.writePreface(preface, args[0]);
+				AAFFactory.writePreface(preface, "./compo-example.aaf");
 			}
 			else { // Else assume an XML file is required
 				AvidFactory.registerAvidExtensions(); // Line will be removed on final release of MAJ
